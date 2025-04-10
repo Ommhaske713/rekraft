@@ -20,6 +20,27 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Variables
+
+This project requires several environment variables to be set up. Create a `.env` file in the root directory with the following variables:
+
+```env
+# MongoDB Connection String
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/<database>?retryWrites=true&w=majority
+
+# Email Configuration (for notifications and verification)
+EMAIL_USER=your-email@example.com
+EMAIL_PASS=your-app-password
+
+# NextAuth Configuration (for authentication)
+NEXTAUTH_URL=http://localhost:3000
+NEXTAUTH_SECRET=your-secret-key-for-nextauth
+
+# Upstash Redis Configuration (for rate limiting)
+UPSTASH_REDIS_REST_URL=your-upstash-redis-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-redis-token
+
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
