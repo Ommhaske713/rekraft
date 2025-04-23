@@ -58,12 +58,10 @@ export async function GET() {
       try {
       return new mongoose.Types.ObjectId(item.productId);
       } catch (e) {
-      console.log("Error converting ID, using as is:", item.productId);
       return item.productId as mongoose.Types.ObjectId;
       }
     });
-    console.log("Product IDs in cart:", productIds)
-
+ 
     const products = await ProductModel.find({
       _id: { $in: productIds }
     }, {
