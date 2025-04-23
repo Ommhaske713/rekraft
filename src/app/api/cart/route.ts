@@ -136,7 +136,6 @@ export async function GET() {
     interface CartResponse {
       items: CartItemWithDetails[];
     }
-    console.log("Returning cart items:", cartItems.length)
     return NextResponse.json({ items: cartItems })
   } catch (error) {
     console.error('Error fetching cart:', error)
