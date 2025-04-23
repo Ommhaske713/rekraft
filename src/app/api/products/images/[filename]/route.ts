@@ -4,10 +4,11 @@ import dbConnect from "@/lib/dbConnect";
 
 export async function GET(
     req: Request,
-    { params }: { params: { filename: string } }
-) {
+    { params }: { params: Promise<{ filename: string }> | { filename: string } }
+)  {
     try {
-        const filename = params.filename;
+        const resolvedParams = params instanceof Promise ? await params : params;
+        const filename = resolvedParams.filename;
 
         if (!filename) {
             return NextResponse.json({ error: "Invalid filename" }, { status: 400 });
