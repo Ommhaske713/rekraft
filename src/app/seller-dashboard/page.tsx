@@ -617,8 +617,7 @@ export default function SellerDashboardPage() {
                   required
                 />
               </div>
-              
-              {/* Add image upload section */}
+
               <div>
                 <label className="block text-sm font-medium mb-1 text-gray-700 dark:text-gray-300">
                   Product Images
@@ -689,7 +688,6 @@ export default function SellerDashboardPage() {
             </form>
           </div>
 
-          {/* Your Products Section */}
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-6 mb-6">
             <h2 className="text-xl font-bold text-blue-900 dark:text-blue-300 mb-4">Your Products</h2>
             

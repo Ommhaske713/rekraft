@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation"
 import { Loader2, ShoppingCart, ArrowLeft, MapPin, Tag, Info, ChevronLeft, ChevronRight } from "lucide-react"
 import axios from "axios"
 import MobileMenu from "../../(auth)/signin/mobile-menu"
+import { useSession } from "next-auth/react"
 
 interface Product {
     _id: string;
@@ -32,12 +33,15 @@ export default function ProductDetailPage() {
     const params = useParams()
     const router = useRouter()
     const productId = params.productId as string
+    const { data: session } = useSession()
 
     const [product, setProduct] = useState<Product | null>(null)
     const [isLoading, setIsLoading] = useState(true)
     const [error, setError] = useState("")
     const [quantity, setQuantity] = useState(1)
     const [currentImageIndex, setCurrentImageIndex] = useState(0)
+    const [negotiatedPrice, setNegotiatedPrice] = useState<number | null>(null)
+    const [isNegotiationLoading, setIsNegotiationLoading] = useState(false)
 
     useEffect(() => {
         const fetchProduct = async () => {
@@ -58,13 +62,35 @@ export default function ProductDetailPage() {
         }
     }, [productId])
 
+    useEffect(() => {
+        const checkNegotiations = async () => {
+            if (!product || !session?.user) return
+
+            try {
+                setIsNegotiationLoading(true)
+                const response = await axios.get(`/api/negotiations/check?productId=${product._id}`)
+                if (response.data.hasNegotiation) {
+                    setNegotiatedPrice(response.data.negotiation.counterOffer || 
+                                       response.data.negotiation.initialPrice)
+                }
+            } catch (error) {
+                console.error("Error checking negotiations:", error)
+            } finally {
+                setIsNegotiationLoading(false)
+            }
+        }
+
+        checkNegotiations()
+    }, [product, session])
+
     const handleAddToCart = async () => {
         if (!product) return
 
         try {
             await axios.post('/api/cart', {
                 productId: product._id,
-                quantity
+                quantity,
+                price: negotiatedPrice || product.price
             })
             alert("Product added to cart!")
         } catch (err: any) {
@@ -196,14 +222,32 @@ export default function ProductDetailPage() {
                             {product.title}
                         </h1>
 
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                            ₹{product.price.toLocaleString()}
-                            {product.negotiable && (
-                                <span className="ml-2 text-sm font-normal text-blue-600 dark:text-blue-400">
-                                    Negotiable
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                            {isNegotiationLoading ? (
+                                <span className="flex items-center">
+                                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                    Checking price...
+                                </span>
+                            ) : negotiatedPrice ? (
+                                <div>
+                                    <span className="text-green-600">₹{negotiatedPrice.toLocaleString()}</span>
+                                    <span className="ml-2 text-sm font-normal text-gray-500 line-through">
+                                        ₹{product.price.toLocaleString()}
+                                    </span>
+                                    <span className="ml-2 text-sm font-medium text-green-600">
+                                        (Negotiated)
+                                    </span>
+                                </div>
+                            ) : (
+                                <span>₹{product.price.toLocaleString()}
+                                    {product.negotiable && (
+                                        <span className="ml-2 text-sm font-normal text-blue-600 dark:text-blue-400">
+                                            Negotiable
+                                        </span>
+                                    )}
                                 </span>
                             )}
-                        </p>
+                        </div>
 
                         <div className="flex items-center text-gray-600 dark:text-gray-400">
                             <MapPin className="h-4 w-4 mr-1" />
@@ -273,7 +317,7 @@ export default function ProductDetailPage() {
                                     Add to Cart
                                 </button>
 
-                                {product.negotiable && (
+                                {product.negotiable && !negotiatedPrice && (
                                     <button
                                         onClick={handleStartNegotiation}
                                         className="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-6 rounded-md"

@@ -64,6 +64,7 @@ export default function ProductsPage() {
     min: searchParams.get("minPrice") || "",
     max: searchParams.get("maxPrice") || ""
   })
+  const [negotiatedPrices, setNegotiatedPrices] = useState<Record<string, number>>({});
   const [location, setLocation] = useState(searchParams.get("location") || "")
   const [sortBy, setSortBy] = useState("newest")
   const [cartCount, setCartCount] = useState(0)
@@ -90,6 +91,33 @@ export default function ProductsPage() {
   }, [])
 
   useEffect(() => {
+    const fetchNegotiatedPrices = async () => {
+      if (!currentUser?.id) return;
+
+      try {
+        const response = await axios.get('/api/negotiations', {
+          params: { customerId: currentUser.id }
+        });
+
+        const negotiations = response.data || [];
+        const priceMap: Record<string, number> = {};
+
+        negotiations.forEach((negotiation: any) => {
+          if (negotiation.status === 'accepted') {
+            priceMap[negotiation.productId] = negotiation.counterOffer || negotiation.initialPrice;
+          }
+        });
+
+        setNegotiatedPrices(priceMap);
+      } catch (err) {
+        console.error("Failed to fetch negotiated prices:", err);
+      }
+    };
+
+    fetchNegotiatedPrices();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
     const fetchCart = async () => {
       try {
         console.log("Fetching cart data...")
@@ -109,7 +137,7 @@ export default function ProductsPage() {
 
     fetchCart()
 
-    const intervalId = setInterval(fetchCart, 30000) 
+    const intervalId = setInterval(fetchCart, 30000)
 
     return () => clearInterval(intervalId)
   }, [])
@@ -156,23 +184,34 @@ export default function ProductsPage() {
     try {
       console.log("Adding product to cart:", productId)
 
-      const response = await axios.post('/api/cart', {
+      const product = products.find(p => p._id === productId);
+      if (!product) return;
+      
+      const payload: { productId: string; quantity: number; price?: number } = {
         productId,
         quantity: 1
-      }, { withCredentials: true })
+      };
+  
+      if (negotiatedPrices[productId]) {
+        payload.price = negotiatedPrices[productId];
+      }
 
-      console.log("Add to cart response:", response.data)
+      await axios.post('/api/cart', payload, { withCredentials: true });
 
       const cartResponse = await axios.get('/api/cart', { withCredentials: true })
       console.log("Updated cart:", cartResponse.data)
-
+  
       const cartItems = cartResponse.data.items || []
       const totalItems = cartItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
       console.log("New cart count:", totalItems)
-
+  
       setCartCount(totalItems)
 
-      alert("Product added to cart!")
+      const cartItem = cartItems.find((item: any) => item.productId === productId);
+      const inCartQuantity = cartItem ? cartItem.quantity : 0;
+      const remainingQuantity = product.quantity - inCartQuantity;
+
+      alert(`Product added to cart! ${remainingQuantity} ${product.unit} remaining available.`);
     } catch (err: any) {
       console.error("Failed to add to cart:", err)
       alert(err.response?.data?.error || "Failed to add product to cart")
@@ -514,11 +553,25 @@ export default function ProductsPage() {
                       </p>
                       <div className="flex justify-between items-center">
                         <p className="font-semibold text-lg text-gray-900 dark:text-white">
-                          ₹{product.price.toLocaleString()}
-                          {product.negotiable && (
-                            <span className="ml-1 text-xs font-normal text-blue-600 dark:text-blue-400">
-                              (Negotiable)
-                            </span>
+                          {negotiatedPrices[product._id] ? (
+                            <>
+                              <span className="text-green-600">₹{negotiatedPrices[product._id].toLocaleString()}</span>
+                              <span className="ml-2 text-sm font-normal text-gray-500 line-through">
+                                ₹{product.price.toLocaleString()}
+                              </span>
+                              <span className="ml-1 text-xs font-medium text-green-600">
+                                (Negotiated)
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              ₹{product.price.toLocaleString()}
+                              {product.negotiable && (
+                                <span className="ml-1 text-xs font-normal text-blue-600 dark:text-blue-400">
+                                  (Negotiable)
+                                </span>
+                              )}
+                            </>
                           )}
                         </p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
