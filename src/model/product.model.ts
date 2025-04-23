@@ -80,9 +80,9 @@ export class ProductModel {
     return await ProductModelMongoose.findByIdAndDelete(id);
   }
 
-  static async find(filters: Record<string, any> = {}): Promise<Product[]> {
+  static async find(filters: Record<string, any> = {}, projection?: Record<string, any>): Promise<Product[]> {
     await mongoose.connect(process.env.MONGODB_URI!);
-    return await ProductModelMongoose.find(filters).sort({ createdAt: -1 });
+    return await ProductModelMongoose.find(filters, projection).sort({ createdAt: -1 });
   }
 
   static async getSellerProducts(sellerId: string): Promise<Product[]> {
