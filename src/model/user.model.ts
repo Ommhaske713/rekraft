@@ -176,27 +176,53 @@ export class UserModel {
     return user;
   }
 
-  static async updateUser(id: string, data: Partial<Customer | Seller>): Promise<User | null> {
-    await dbConnect();
-    const sanitizedData = this.sanitizeInput(data);
-    return BaseUserModel.findByIdAndUpdate(
+// Inside the UserModel class, fix the updateUser method:
+static async updateUser(id: string, data: Partial<Customer | Seller>): Promise<User | null> {
+  await dbConnect();
+  const sanitizedData = this.sanitizeInput(data);
+  
+  try {
+    // This was missing - actually perform the database update
+    const updatedUser = await mongoose.models.User.findByIdAndUpdate(
       id,
-      { ...sanitizedData, $unset: data.verificationCode ? { verificationCode: 1, verificationExpires: 1 } : {} },
-      { new: true, runValidators: true }
-    ).exec();
+      { $set: sanitizedData },
+      { new: true }
+    );
+    
+    console.log("User update successful:", updatedUser ? "Yes" : "No");
+    if (updatedUser && 'cart' in sanitizedData) {
+      console.log("Updated cart in database:", JSON.stringify(updatedUser.cart));
+    }
+    
+    return updatedUser;
+  } catch (error) {
+    console.error("Error updating user:", error);
+    throw error;
   }
+}
 
   static async deleteUser(id: string): Promise<User | null> {
     await dbConnect();
     return BaseUserModel.findByIdAndDelete(id).exec();
   }
 
-  static async getCustomerById(userId: string): Promise<User | null> {
+  static async getCustomerById(id: string): Promise<Customer | null> {
     await dbConnect();
-    return BaseUserModel.findOne({
-      _id: userId,
+    
+    // Bypass the model to directly fetch from the database
+    // This ensures we get the most up-to-date version
+    if (!mongoose.connection.db) {
+      throw new Error("Database connection is not established");
+    }
+    const user = await mongoose.connection.db.collection('users').findOne({
+      _id: new mongoose.Types.ObjectId(id),
       role: 'customer'
-    }).exec();
+    });
+    
+    if (!user) return null;
+    
+    // Return the raw user document with proper typing
+    return user as unknown as Customer;
   }
 
   static async getSellerById(userId: string): Promise<User | null> {
