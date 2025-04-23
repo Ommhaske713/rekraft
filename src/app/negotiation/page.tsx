@@ -1,250 +1,216 @@
 "use client"
 
-import type React from "react"
-
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Loader2, ArrowLeft, MessageSquare, Check, X, RefreshCw } from "lucide-react"
+import axios from "axios"
 import Link from "next/link"
 import Image from "next/image"
-import { Search, User, ChevronDown, Send } from "lucide-react"
-import { useState } from "react"
-import Sidebar from "@/components/sidebar"
-import MobileMenu from "../(auth)/signin/mobile-menu"
+import { useSession } from "next-auth/react"
 
+interface NegotiationMessage {
+  userId: string;
+  message: string;
+  timestamp: Date;
+}
 
-export default function NegotiationPage() {
-  const [message, setMessage] = useState("")
-  const [currentOffersOpen, setCurrentOffersOpen] = useState(false)
-  const [previousOffersOpen, setPreviousOffersOpen] = useState(false)
+interface Negotiation {
+  _id: string;
+  productId: string;
+  customerId: string;
+  sellerId: string;
+  initialPrice: number;
+  counterOffer?: number;
+  status: 'pending' | 'accepted' | 'rejected' | 'countered';
+  messages: NegotiationMessage[];
+  createdAt: string;
+  updatedAt: string;
+  product?: {
+    _id: string;
+    title: string;
+    price: number;
+    images: string[];
+  };
+}
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault()
-    console.log("Sending message:", message)
-    setMessage("")
+export default function NegotiationsPage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const status = searchParams.get("status")
+  const { data: session, status: sessionStatus } = useSession() 
+  const [negotiations, setNegotiations] = useState<Negotiation[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    const fetchNegotiations = async () => {
+
+      if (sessionStatus === "loading") return;
+
+      if (sessionStatus === "unauthenticated" || !session?.user?.id) {
+        setError("You must be logged in to view negotiations")
+        setIsLoading(false)
+        return
+      }
+      try {
+        setIsLoading(true)
+        const userId = session.user.id
+
+        const [customerResponse, sellerResponse] = await Promise.all([
+          axios.get(`/api/negotiations?customerId=${userId}`),
+          axios.get(`/api/negotiations?sellerId=${userId}`)
+        ])
+
+        const allNegotiations = [...customerResponse.data, ...sellerResponse.data]
+
+        const negotiationsWithProducts = await Promise.all(
+          allNegotiations.map(async (negotiation: Negotiation) => {
+            try {
+              const productResponse = await axios.get(`/api/products/${negotiation.productId}`)
+              return {
+                ...negotiation,
+                product: productResponse.data.product
+              }
+            } catch (err) {
+              console.error(`Error fetching product ${negotiation.productId}:`, err)
+              return negotiation
+            }
+          })
+        )
+
+        setNegotiations(negotiationsWithProducts)
+      } catch (err: any) {
+        console.error("Error fetching negotiations:", err)
+        setError(err.response?.data?.error || "Failed to load negotiations")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchNegotiations()
+  }, [session]) 
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col min-h-screen bg-white dark:bg-gray-900">
-      {/* Navigation */}
-      <header className="sticky top-0 z-50 w-full border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-4">
-        <div className="container flex items-center justify-between">
-          <div className="flex items-center">
-            <Link href="/" className="text-xl font-bold text-black dark:text-white">
-              reKraftt.
-            </Link>
-          </div>
+    <div className="container mx-auto max-w-4xl p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">My Negotiations</h1>
+        <Link href="/products" className="text-blue-600 flex items-center">
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to products
+        </Link>
+      </div>
 
-          <nav className="hidden md:flex items-center space-x-12">
-            <Link
-              href="/"
-              className="font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
-            >
-              Home
-            </Link>
-            <Link
-              href="/about"
-              className="font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
-            >
-              About Us
-            </Link>
-            <Link
-              href="/services"
-              className="font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
-            >
-              Services
-            </Link>
-            <Link
-              href="/contact"
-              className="font-medium text-gray-800 dark:text-gray-200 hover:text-blue-600 dark:hover:text-blue-400"
-            >
-              Contact Us
-            </Link>
-          </nav>
-
-          <div className="flex items-center space-x-2">
-            <button className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white px-4 py-2 rounded-md hidden sm:flex items-center">
-              <Search className="h-4 w-4 mr-2" />
-              Search
-            </button>
-            <button className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white px-4 py-2 rounded-md hidden sm:flex items-center">
-              <User className="h-4 w-4 mr-2" />
-              Profile
-            </button>
-            <MobileMenu />
-          </div>
+      {status === "created" && (
+        <div className="bg-green-50 p-4 rounded-md mb-6">
+          <p className="text-green-700">Your offer has been sent to the seller. You'll be notified when they respond.</p>
         </div>
-      </header>
+      )}
 
-      <main className="flex-1 py-10">
-        <div className="container flex flex-col md:flex-row">
-          {/* Sidebar Component */}
-          <Sidebar activeIcon="wallet" />
+      {error && (
+        <div className="bg-red-50 p-4 rounded-md mb-6">
+          <p className="text-red-700">{error}</p>
+        </div>
+      )}
 
-          {/* Main Content */}
-          <div className="flex-1 px-4 md:pl-6">
-            <div className="flex flex-col lg:flex-row gap-6">
-              {/* Left Sidebar - User Profiles and Negotiation Overview */}
-              <div className="w-full lg:w-64 flex-shrink-0">
-                {/* Buyer Profile */}
-                <div className="flex items-center mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
-                  <div className="w-12 h-12 relative rounded-full overflow-hidden mr-3">
-                    <Image
-                      src="/placeholder.svg?height=50&width=50"
-                      alt="Buyer's Profile"
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
-                  <div>
-                    <h3 className="text-blue-600 dark:text-blue-400 font-medium">Buyer's Name</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
-                      <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                      Online
-                    </p>
-                  </div>
-                </div>
-
-                {/* Seller Profile */}
-                <div className="flex items-center mb-6 pb-4 border-b border-gray-200 dark:border-gray-700">
-                  <div className="w-12 h-12 relative rounded-full overflow-hidden mr-3">
-                    <Image
-                      src="/placeholder.svg?height=50&width=50"
-                      alt="Seller's Profile"
-                      fill
-                      className="object-cover"
-                    />
-                  </div>
-                  <div>
-                    <h3 className="text-blue-600 dark:text-blue-400 font-medium">Seller's Name</h3>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 flex items-center">
-                      <span className="w-2 h-2 bg-gray-400 rounded-full mr-2"></span>
-                      Offline
-                    </p>
-                  </div>
-                </div>
-
-                {/* Negotiation Overview */}
-                <div className="mb-6">
-                  <h3 className="text-blue-600 dark:text-blue-400 font-medium mb-4">Negotiation Overview</h3>
-
-                  {/* Current Offers */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-md mb-3">
-                    <button
-                      className="flex items-center justify-between w-full p-3 text-left"
-                      onClick={() => setCurrentOffersOpen(!currentOffersOpen)}
-                    >
-                      <span className="text-blue-600 dark:text-blue-400">Current Offers</span>
-                      <ChevronDown
-                        className={`h-5 w-5 text-blue-600 dark:text-blue-400 transition-transform ${currentOffersOpen ? "rotate-180" : ""}`}
+      {negotiations.length === 0 ? (
+        <div className="text-center py-12 bg-gray-50 rounded-lg">
+          <p className="text-gray-500 mb-4">You don't have any active negotiations yet.</p>
+          <Link
+            href="/products"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          >
+            Browse Products
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {negotiations.map((negotiation) => (
+            <div
+              key={negotiation._id}
+              className="border border-gray-200 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div
+                className="flex flex-col sm:flex-row cursor-pointer"
+                onClick={() => router.push(`/negotiation/${negotiation._id}`)}
+              >
+                <div className="sm:w-1/4 bg-gray-100">
+                  {negotiation.product?.images && negotiation.product.images[0] ? (
+                    <div className="relative aspect-square">
+                      <Image
+                        src={negotiation.product.images[0]}
+                        alt={negotiation.product.title || "Product"}
+                        fill
+                        unoptimized={true}
+                        className="object-cover"
                       />
-                    </button>
-                    {currentOffersOpen && (
-                      <div className="p-3 pt-0 border-t border-gray-200 dark:border-gray-700">
-                        <p className="text-sm text-gray-600 dark:text-gray-300">No current offers</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Previous Offers */}
-                  <div className="border border-gray-200 dark:border-gray-700 rounded-md">
-                    <button
-                      className="flex items-center justify-between w-full p-3 text-left"
-                      onClick={() => setPreviousOffersOpen(!previousOffersOpen)}
-                    >
-                      <span className="text-blue-600 dark:text-blue-400">Previous Offers</span>
-                      <ChevronDown
-                        className={`h-5 w-5 text-blue-600 dark:text-blue-400 transition-transform ${previousOffersOpen ? "rotate-180" : ""}`}
-                      />
-                    </button>
-                    {previousOffersOpen && (
-                      <div className="p-3 pt-0 border-t border-gray-200 dark:border-gray-700">
-                        <p className="text-sm text-gray-600 dark:text-gray-300">No previous offers</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Content - Chat Area */}
-              <div className="flex-1">
-                <h1 className="text-3xl font-bold text-blue-900 dark:text-blue-300 mb-6 text-center lg:text-left">
-                  Negotiation Chat Box
-                </h1>
-
-                <div className="mb-4">
-                  <h2 className="text-2xl font-bold text-blue-900 dark:text-blue-300 mb-4">Seller Name</h2>
+                    </div>
+                  ) : (
+                    <div className="aspect-square bg-gray-200 flex items-center justify-center">
+                      <p className="text-gray-500">No image</p>
+                    </div>
+                  )}
                 </div>
 
-                {/* Chat Messages */}
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 mb-4 h-[400px] overflow-y-auto">
-                  {/* Seller Message */}
-                  <div className="mb-4">
-                    <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm inline-block max-w-[80%] text-gray-800 dark:text-gray-200">
-                      <p>Sure the price is 1200 Rs a pair.</p>
+                <div className="p-4 flex-1">
+                  <h3 className="font-medium">
+                    {negotiation.product?.title || "Product"}
+                  </h3>
+
+                  <div className="mt-2 flex justify-between">
+                    <div>
+                      <p className="text-sm text-gray-600">Original price: ₹{negotiation.product?.price.toLocaleString() || 'N/A'}</p>
+                      <p className="text-sm text-gray-600">Offered price: ₹{negotiation.initialPrice.toLocaleString()}</p>
+                      {negotiation.counterOffer && (
+                        <p className="text-sm text-gray-600">Counter offer: ₹{negotiation.counterOffer.toLocaleString()}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center">
+                      {negotiation.status === 'pending' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                          Pending
+                        </span>
+                      )}
+                      {negotiation.status === 'accepted' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <Check className="h-3 w-3 mr-1" />
+                          Accepted
+                        </span>
+                      )}
+                      {negotiation.status === 'rejected' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                          <X className="h-3 w-3 mr-1" />
+                          Rejected
+                        </span>
+                      )}
+                      {negotiation.status === 'countered' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <RefreshCw className="h-3 w-3 mr-1" />
+                          Countered
+                        </span>
+                      )}
                     </div>
                   </div>
 
-                  {/* Buyer Message */}
-                  <div className="mb-4 flex justify-end">
-                    <div className="bg-blue-900 dark:bg-blue-700 text-white rounded-lg p-3 shadow-sm inline-block max-w-[80%]">
-                      <p>Hey, I want to Buy a pair of these windows!</p>
-                    </div>
+                  <div className="mt-4 flex items-center text-sm text-gray-500">
+                    <MessageSquare className="h-4 w-4 mr-1" />
+                    <span>{negotiation.messages?.length || 0} messages</span>
+                    <span className="mx-2">•</span>
+                    <span>Last updated: {new Date(negotiation.updatedAt).toLocaleDateString()}</span>
                   </div>
-
-                  {/* Seller Message */}
-                  <div className="mb-4">
-                    <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm inline-block max-w-[80%] text-gray-800 dark:text-gray-200">
-                      <p>No its way too low</p>
-                      <p>My final price is 1050!!</p>
-                    </div>
-                  </div>
-
-                  {/* Buyer Message */}
-                  <div className="mb-4 flex justify-end">
-                    <div className="bg-blue-900 dark:bg-blue-700 text-white rounded-lg p-3 shadow-sm inline-block max-w-[80%]">
-                      <p>I can give You 850 Rs a pair.</p>
-                    </div>
-                  </div>
-
-                  {/* Seller Message */}
-                  <div className="mb-4">
-                    <div className="bg-white dark:bg-gray-700 rounded-lg p-3 shadow-sm inline-block max-w-[80%] text-gray-800 dark:text-gray-200">
-                      <p>Okay Deal!!</p>
-                    </div>
-                  </div>
-
-                  {/* Buyer Message */}
-                  <div className="mb-4 flex justify-end">
-                    <div className="bg-blue-900 dark:bg-blue-700 text-white rounded-lg p-3 shadow-sm inline-block max-w-[80%]">
-                      <p>Okay Final lets finalize is at 1050 Rs</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Chat Input */}
-                <div>
-                  <h3 className="text-xl font-medium text-blue-900 dark:text-blue-300 mb-3">Chat Input Box</h3>
-                  <form onSubmit={handleSendMessage} className="flex">
-                    <input
-                      type="text"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      placeholder="Type your message here..."
-                      className="flex-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-l-md p-3 focus:outline-none focus:ring-2 focus:ring-blue-600 dark:focus:ring-blue-500"
-                    />
-                    <button
-                      type="submit"
-                      className="bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white px-4 py-2 rounded-r-md flex items-center"
-                    >
-                      <Send className="h-5 w-5 mr-2" />
-                      Send
-                    </button>
-                  </form>
                 </div>
               </div>
             </div>
-          </div>
+          ))}
         </div>
-      </main>
+      )}
     </div>
   )
 }
-
