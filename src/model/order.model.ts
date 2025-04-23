@@ -98,11 +98,21 @@ const NegotiationModelMongoose = mongoose.models.Negotiation ||
   mongoose.model<Negotiation>('Negotiation', negotiationSchemaMongoose);
 
 export class NegotiationModel {
+  static async findOne(query: any): Promise<Negotiation | null> {
+    await dbConnect();
+    return NegotiationModelMongoose.findOne(query).exec();
+  }
+
+  static async find(query: any): Promise<Negotiation[]> {
+    await dbConnect();
+    return NegotiationModelMongoose.find(query).exec();
+  }
+
   static async findById(id: string): Promise<Negotiation | null> {
     await dbConnect();
     return NegotiationModelMongoose.findById(id).exec();
   }
-
+  
   static async createNegotiation(data: z.infer<typeof negotiationSchema>): Promise<Negotiation> {
     await dbConnect();
     const negotiation = new NegotiationModelMongoose(data);
