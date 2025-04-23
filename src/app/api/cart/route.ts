@@ -4,33 +4,13 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/options'
 import { UserModel } from '@/model/user.model'
 import { ProductModel } from '@/model/product.model'
 import mongoose from 'mongoose'
+import dbConnect from "@/lib/dbConnect";
+import { NegotiationModel } from '@/model/order.model'
 
 interface CartItem {
-  productId: string;
+  productId: string | mongoose.Types.ObjectId;
   quantity: number;
-}
-
-interface Product {
-  _id: string;
-  title: string;
-  price: number;
-  quantity: number;
-  images?: string[];
-  category: string;
-  sellerId: string;
-  negotiable: boolean;
-}
-
-interface CartItemWithDetails {
-  id: string;
-  productId: string;
-  title: string;
-  price: number;
-  quantity: number;
-  image: string;
-  category: string;
-  sellerId: string;
-  negotiable: boolean;
+  negotiatedPrice?: number; 
 }
 
 export async function GET() {
@@ -42,85 +22,131 @@ export async function GET() {
 
     const userId = session.user.id
     if (!userId) {
-      return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
+      return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
     
     console.log("Fetching cart for user:", userId)
-    const user = await UserModel.getCustomerById(userId);
+
+    if (!mongoose.connection.db) {
+      await dbConnect();
+    }
+
+    console.log("Directly querying database for user:", userId);
+    if (!mongoose.connection.readyState) {
+      await dbConnect();
+    }
+    const user = await mongoose.connection.db?.collection('users').findOne({
+      _id: new mongoose.Types.ObjectId(userId)
+    });
     
     if (!user || user.role !== 'customer') {
       console.log("User not found or not a customer")
       return NextResponse.json({ error: 'User not found or not a customer' }, { status: 404 })
     }
-    
+
     const cart = user.cart || []
-    console.log("Raw cart data:", JSON.stringify(cart))
+    console.log("Raw cart data directly from DB:", JSON.stringify(cart))
     
     if (cart.length === 0) {
       console.log("Cart is empty")
       return NextResponse.json({ items: [] })
     }
 
-    try {
-      const productIds = cart.map(item => {
-        try {
-          return item.productId.toString().trim();
-        } catch (err) {
-          console.error("Error converting productId to string:", err);
-          return item.productId;
-        }
-      });
-      
-      console.log("Looking for products with IDs:", productIds);
-
-      const allProducts = await ProductModel.find({}) as Product[];
-      console.log(`Retrieved ${allProducts.length} total products from database`);
-
-      if (allProducts.length > 0) {
-        console.log("Sample product:", {
-          id: allProducts[0]._id.toString(),
-          title: allProducts[0].title
-        });
-      }
-      const cartItems = [];
-
-      for (const item of cart) {
-        const cartProductId = item.productId.toString().trim();
-
-        const matchingProduct = allProducts.find(product => 
-          product._id.toString().trim() === cartProductId
-        );
-        
-        if (matchingProduct) {
-          console.log(`Found product for cart item: ${matchingProduct.title}`);
-          cartItems.push({
-            id: cartProductId,
-            productId: cartProductId,
-            title: matchingProduct.title || "Unknown Product",
-            price: matchingProduct.price || 0,
-            quantity: item.quantity || 1,
-            image: matchingProduct.images?.[0] || "https://via.placeholder.com/200",
-            category: matchingProduct.category || "Uncategorized",
-            sellerId: matchingProduct.sellerId.toString(),
-            negotiable: matchingProduct.negotiable || false
-          });
-        } else {
-          console.log(`No matching product found for ID: ${cartProductId}`);
-        }
-      }
-      
-      console.log(`Found ${cartItems.length} products out of ${cart.length} cart items`);
-      return NextResponse.json({ items: cartItems });
-    } catch (error) {
-      console.error("Error processing cart items:", error);
-      return NextResponse.json({ 
-        error: 'Failed to process cart items', 
-        details: String(error) 
-      }, { status: 500 });
+    interface CartItem {
+      productId: string | mongoose.Types.ObjectId;
+      quantity: number;
+      negotiatedPrice?: number; 
     }
+
+    const productIds: mongoose.Types.ObjectId[] = cart.map((item: CartItem) => {
+      try {
+      return new mongoose.Types.ObjectId(item.productId);
+      } catch (e) {
+      console.log("Error converting ID, using as is:", item.productId);
+      return item.productId as mongoose.Types.ObjectId;
+      }
+    });
+    console.log("Product IDs in cart:", productIds)
+
+    const products = await ProductModel.find({
+      _id: { $in: productIds }
+    }, {
+      title: 1,
+      price: 1,
+      images: 1,
+      category: 1,
+      sellerId: 1,
+      negotiable: 1
+    }) as Array<{
+      _id: mongoose.Types.ObjectId,
+      title: string,
+      price: number,
+      images: string[],
+      category: string,
+      sellerId: mongoose.Types.ObjectId,
+      negotiable: boolean
+    }>
+    
+    console.log("Found products:", products.length)
+
+    interface CartItem {
+      productId: string | mongoose.Types.ObjectId;
+      quantity: number;
+    }
+
+    interface Product {
+      _id: mongoose.Types.ObjectId;
+      title: string;
+      price: number;
+      images: string[];
+      category: string;
+      sellerId: mongoose.Types.ObjectId;
+      negotiable: boolean;
+    }
+
+    interface CartItemWithDetails {
+      id: string;
+      productId: string;
+      title: string;
+      price: number;
+      quantity: number;
+      image: string;
+      category: string;
+      sellerId: string;
+      negotiable: boolean;
+    }
+
+    const cartItems: CartItemWithDetails[] = cart.map((cartItem: CartItem) => {
+      const matchedProduct = products.find((p: Product) => 
+      p._id.toString() === cartItem.productId.toString()
+      )
+      
+      if (!matchedProduct) {
+      console.log("Product not found for cart item:", cartItem.productId)
+      return null
+      }
+      
+      return {
+      id: cartItem.productId.toString(),
+      productId: cartItem.productId.toString(),
+      title: matchedProduct.title,
+      price: matchedProduct.price,
+      negotiatedPrice: cartItem.negotiatedPrice, 
+      quantity: cartItem.quantity,
+      image: matchedProduct.images?.[0] || "/product-placeholder.svg",
+      category: matchedProduct.category,
+      sellerId: matchedProduct.sellerId.toString(),
+      negotiable: matchedProduct.negotiable
+      }
+    }).filter((item: CartItemWithDetails | null): item is CartItemWithDetails => item !== null)
+    interface CartResponse {
+      items: CartItemWithDetails[];
+    }
+    console.log("Returning cart items:", cartItems.length)
+    return NextResponse.json({ items: cartItems })
   } catch (error) {
-    console.error('Error fetching cart:', error);
-    return NextResponse.json({ error: 'Failed to fetch cart' }, { status: 500 });
+    console.error('Error fetching cart:', error)
+    return NextResponse.json({ error: 'Failed to fetch cart' }, { status: 500 })
   }
 }
 
@@ -131,7 +157,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { productId, quantity = 1 } = await request.json()
+    const { productId, quantity, price } = await request.json();
 
     if (!productId) {
       return NextResponse.json({ error: 'Product ID is required' }, { status: 400 })
@@ -146,6 +172,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'User ID not found' }, { status: 400 })
     }
     
+    console.log("Fetching user:", userId);
     const user = await UserModel.getCustomerById(userId)
     
     if (!user || user.role !== 'customer') {
@@ -164,14 +191,27 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    if (product.sellerId.toString() === userId) {
-      return NextResponse.json({ 
-        error: 'Sellers cannot add their own products to cart' 
-      }, { status: 403 });
+    let finalPrice = product.price;
+    if (price) {
+      const negotiation = await NegotiationModel.findOne({
+        productId,
+        customerId: userId,
+        status: 'accepted'
+      });
+      
+      if (negotiation) {
+        finalPrice = negotiation.counterOffer || negotiation.initialPrice;
+        console.log(`Using negotiated price: ${finalPrice} instead of ${product.price}`);
+      }
     }
 
-    const cart = user.cart || []
-    const existingItemIndex = cart.findIndex((item: CartItem) => item.productId === productId)
+    const cart = Array.isArray(user.cart) ? [...user.cart] : [];
+    console.log("Current cart before update:", JSON.stringify(cart));
+
+    const productIdString = productId.toString()
+    const existingItemIndex = cart.findIndex(
+      item => item.productId && item.productId.toString() === productIdString
+    )
     
     if (existingItemIndex >= 0) {
       const newTotalQuantity = cart[existingItemIndex].quantity + quantity
@@ -184,17 +224,57 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
       }
       
-      cart[existingItemIndex].quantity = newTotalQuantity
+      cart[existingItemIndex].quantity = newTotalQuantity;
+
+      if (finalPrice !== product.price) {
+        (cart[existingItemIndex] as CartItem).negotiatedPrice = finalPrice;
+      }
+      
+      console.log("Updated existing item in cart");
     } else {
-      cart.push({ productId, quantity })
+      const cartItem: { productId: string; quantity: number; negotiatedPrice?: number } = {
+        productId: productIdString,
+        quantity
+      };
+
+      if (finalPrice !== product.price) {
+        cartItem.negotiatedPrice = finalPrice;
+      }
+      
+      cart.push(cartItem);
+      console.log("Added new item to cart with ID:", productIdString);
     }
     
-    await UserModel.updateUser(userId, { cart })
+    console.log("Cart to be saved:", JSON.stringify(cart));
+
+    if (!mongoose.connection.db) {
+      throw new Error('Database connection is not established');
+    }
+    
+    const updateResult = await mongoose.connection.db.collection('users').updateOne(
+      { _id: new mongoose.Types.ObjectId(userId) },
+      { $set: { cart: cart } }
+    );
+    
+    console.log("Direct MongoDB update result:", {
+      acknowledged: updateResult.acknowledged,
+      modifiedCount: updateResult.modifiedCount
+    });
+
+    const updatedUser = await mongoose.connection.db.collection('users').findOne(
+      { _id: new mongoose.Types.ObjectId(userId) }
+    );
+    
+    console.log("Verification - Cart after update:", {
+      hasCart: updatedUser ? !!updatedUser.cart : false,
+      cartLength: updatedUser?.cart?.length || 0,
+      cartItems: JSON.stringify(updatedUser?.cart || [])
+    });
     
     return NextResponse.json({ 
       success: true, 
       message: 'Item added to cart',
-      cart
+      cart: updatedUser?.cart || []  
     })
   } catch (error) {
     console.error('Error adding to cart:', error)
@@ -242,21 +322,43 @@ export async function PATCH(request: NextRequest) {
       }, { status: 400 })
     }
 
-    const cart = user.cart || []
-    const existingItemIndex = cart.findIndex((item: CartItem) => item.productId === productId)
+    const cart = Array.isArray(user.cart) ? [...user.cart] : []
+    
+    const productIdString = productId.toString()
+    const existingItemIndex = cart.findIndex(
+      item => item.productId && item.productId.toString() === productIdString
+    )
     
     if (existingItemIndex >= 0) {
       cart[existingItemIndex].quantity = quantity
     } else {
-      cart.push({ productId, quantity })
+      cart.push({ 
+        productId: productIdString, 
+        quantity 
+      })
     }
+
+    if (!mongoose.connection.db) {
+      throw new Error('Database connection is not established');
+    }
+    const updateResult = await mongoose.connection.db.collection('users').updateOne(
+      { _id: new mongoose.Types.ObjectId(userId) },
+      { $set: { cart: cart } }
+    );
     
-    await UserModel.updateUser(userId, { cart })
+    console.log("Update result:", {
+      acknowledged: updateResult.acknowledged,
+      modifiedCount: updateResult.modifiedCount
+    });
+
+    const updatedUser = await mongoose.connection.db.collection('users').findOne(
+      { _id: new mongoose.Types.ObjectId(userId) }
+    );
     
     return NextResponse.json({ 
       success: true, 
       message: 'Cart item updated',
-      cart
+      cart: updatedUser?.cart || []
     })
   } catch (error) {
     console.error('Error updating cart item:', error)
@@ -289,16 +391,34 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'User not found or not a customer' }, { status: 404 })
     }
     
-    let cart = user.cart || []
+    const cart = Array.isArray(user.cart) ? [...user.cart] : []
+    const productIdString = productId.toString()
 
-    cart = cart.filter((item: CartItem) => item.productId !== productId)
+    const updatedCart = cart.filter(
+      item => item.productId && item.productId.toString() !== productIdString
+    );
 
-    await UserModel.updateUser(userId, { cart })
+    if (!mongoose.connection.db) {
+      throw new Error('Database connection is not established');
+    }
+    const updateResult = await mongoose.connection.db.collection('users').updateOne(
+      { _id: new mongoose.Types.ObjectId(userId) },
+      { $set: { cart: updatedCart } }
+    );
+    
+    console.log("Update result:", {
+      acknowledged: updateResult.acknowledged,
+      modifiedCount: updateResult.modifiedCount
+    });
+
+    const updatedUser = await mongoose.connection.db.collection('users').findOne(
+      { _id: new mongoose.Types.ObjectId(userId) }
+    );
     
     return NextResponse.json({ 
       success: true, 
       message: 'Item removed from cart',
-      cart
+      cart: updatedUser?.cart || []
     })
   } catch (error) {
     console.error('Error removing from cart:', error)
