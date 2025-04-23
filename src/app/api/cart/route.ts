@@ -24,14 +24,11 @@ export async function GET() {
     if (!userId) {
       return NextResponse.json({ error: 'User ID is required' }, { status: 400 })
     }
-    
-    console.log("Fetching cart for user:", userId)
 
     if (!mongoose.connection.db) {
       await dbConnect();
     }
 
-    console.log("Directly querying database for user:", userId);
     if (!mongoose.connection.readyState) {
       await dbConnect();
     }
@@ -45,7 +42,6 @@ export async function GET() {
     }
 
     const cart = user.cart || []
-    console.log("Raw cart data directly from DB:", JSON.stringify(cart))
     
     if (cart.length === 0) {
       console.log("Cart is empty")
@@ -86,9 +82,7 @@ export async function GET() {
       sellerId: mongoose.Types.ObjectId,
       negotiable: boolean
     }>
-    
-    console.log("Found products:", products.length)
-
+ 
     interface CartItem {
       productId: string | mongoose.Types.ObjectId;
       quantity: number;
@@ -171,8 +165,7 @@ export async function POST(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: 'User ID not found' }, { status: 400 })
     }
-    
-    console.log("Fetching user:", userId);
+
     const user = await UserModel.getCustomerById(userId)
     
     if (!user || user.role !== 'customer') {
@@ -201,12 +194,10 @@ export async function POST(request: NextRequest) {
       
       if (negotiation) {
         finalPrice = negotiation.counterOffer || negotiation.initialPrice;
-        console.log(`Using negotiated price: ${finalPrice} instead of ${product.price}`);
       }
     }
 
     const cart = Array.isArray(user.cart) ? [...user.cart] : [];
-    console.log("Current cart before update:", JSON.stringify(cart));
 
     const productIdString = productId.toString()
     const existingItemIndex = cart.findIndex(
@@ -229,8 +220,7 @@ export async function POST(request: NextRequest) {
       if (finalPrice !== product.price) {
         (cart[existingItemIndex] as CartItem).negotiatedPrice = finalPrice;
       }
-      
-      console.log("Updated existing item in cart");
+
     } else {
       const cartItem: { productId: string; quantity: number; negotiatedPrice?: number } = {
         productId: productIdString,
@@ -242,10 +232,7 @@ export async function POST(request: NextRequest) {
       }
       
       cart.push(cartItem);
-      console.log("Added new item to cart with ID:", productIdString);
     }
-    
-    console.log("Cart to be saved:", JSON.stringify(cart));
 
     if (!mongoose.connection.db) {
       throw new Error('Database connection is not established');
@@ -255,22 +242,11 @@ export async function POST(request: NextRequest) {
       { _id: new mongoose.Types.ObjectId(userId) },
       { $set: { cart: cart } }
     );
-    
-    console.log("Direct MongoDB update result:", {
-      acknowledged: updateResult.acknowledged,
-      modifiedCount: updateResult.modifiedCount
-    });
 
     const updatedUser = await mongoose.connection.db.collection('users').findOne(
       { _id: new mongoose.Types.ObjectId(userId) }
     );
-    
-    console.log("Verification - Cart after update:", {
-      hasCart: updatedUser ? !!updatedUser.cart : false,
-      cartLength: updatedUser?.cart?.length || 0,
-      cartItems: JSON.stringify(updatedUser?.cart || [])
-    });
-    
+        
     return NextResponse.json({ 
       success: true, 
       message: 'Item added to cart',
@@ -346,11 +322,6 @@ export async function PATCH(request: NextRequest) {
       { $set: { cart: cart } }
     );
     
-    console.log("Update result:", {
-      acknowledged: updateResult.acknowledged,
-      modifiedCount: updateResult.modifiedCount
-    });
-
     const updatedUser = await mongoose.connection.db.collection('users').findOne(
       { _id: new mongoose.Types.ObjectId(userId) }
     );
@@ -406,11 +377,6 @@ export async function DELETE(request: NextRequest) {
       { $set: { cart: updatedCart } }
     );
     
-    console.log("Update result:", {
-      acknowledged: updateResult.acknowledged,
-      modifiedCount: updateResult.modifiedCount
-    });
-
     const updatedUser = await mongoose.connection.db.collection('users').findOne(
       { _id: new mongoose.Types.ObjectId(userId) }
     );
