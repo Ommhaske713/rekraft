@@ -7,12 +7,13 @@ import { UserModel } from "@/model/user.model";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     await dbConnect();
 
-    const productId = params.id;
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const productId = resolvedParams.id;
     const product = await ProductModel.findById(productId);
 
     if (!product) {
@@ -31,7 +32,7 @@ export async function GET(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
     await dbConnect();
@@ -41,7 +42,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const productId = params.id;
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const productId = resolvedParams.id;
 
     const product = await ProductModel.findById(productId);
 
